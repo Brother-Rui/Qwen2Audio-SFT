@@ -1,0 +1,30 @@
+{
+  'source1': [
+    {
+      'path': audio_path,
+      'prompt': prompt,
+      'asr_label': label,
+      'source': source
+    },
+    {
+      'audio_name': audio_path,
+      'prompt': prompt,
+      'asr_label': label,
+      'source': source
+    }
+  ],
+  'source2': [
+    {
+      'path': audio_path,
+      'prompt': prompt,
+      'asr_label': label,
+      'source': source
+    },
+    {
+      'audio_name': audio_path,
+      'prompt': prompt,
+      'asr_label': label,
+      'source': source
+    }
+  ]
+}
