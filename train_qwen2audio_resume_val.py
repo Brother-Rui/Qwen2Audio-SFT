@@ -43,39 +43,43 @@ def read_audio(audio_path):
             inputs = f.read()
     return inputs
 
+
 class SFT_dataset(Dataset):
-    def __init__(self,args,processor):
-        self.args=args
-        self.tokenizer=processor.tokenizer
-        self.feature_extractor=processor.feature_extractor
+    def __init__(self, args, processor):
+        self.args = args
+        self.tokenizer = processor.tokenizer
+        self.feature_extractor = processor.feature_extractor
 
-        self.ignore_index=-100
-        self.sep='\n'
-        self.roles=['User:','Assistant:']
-        self.ignore_len=len(self.tokenizer.encode(self.sep+self.roles[1],add_special_tokens=False))
-        self.debug=True
+        self.ignore_index = -100
+        self.sep = '\n'
+        self.roles = ['User:', 'Assistant:']
+        self.ignore_len = len(self.tokenizer.encode(self.sep + self.roles[1], add_special_tokens=False))
+        self.debug = True
 
-        with open(args.train_data_path,'r',encoding='utf-8') as f:
-            self.data_dict=json.load(f)
-        with open(args.train_audio_dirs,'r') as f:
-            self.audio_dirs_dict=json.load(f)
-        
-        #choose data source
-        sources=list(self.data_dict.keys())[1:2] if len(list(self.data_dict.keys()))>1 else list(self.data_dict.keys())
-        print("sources:",sources)
-        #data source
-        self.data=[self.preprocess([item['prompt'],item['asr_label']]) for source in sources for item in self.data_dict[source]]
+        with open(args.train_data_path, 'r', encoding='utf-8') as f:
+            self.data_dict = json.load(f)
+        # with open(args.train_audio_dirs,'r') as f:
+        #     self.audio_dirs_dict=json.load(f)
 
-        audios_path=[os.path.join(self.audio_dirs_dict[source],item['audio_name']) for source in sources for item in self.data_dict[source]]
+        # choose data source
+        sources = list(
+            self.data_dict.keys())  # [1:] if len(list(self.data_dict.keys()))>1 else list(self.data_dict.keys())
+        # data source
+        self.data = [self.preprocess([item['prompt'], item['asr_label']]) for source in sources for item in
+                     self.data_dict[source]]
 
+        # audios_path=[os.path.join(self.audio_dirs_dict[source],item['audio_name']) for source in sources for item in self.data_dict[source]]
+        audios_path = [item['path'] for source in sources for item in self.data_dict[source]]
+        # random.shuffle(audios_path)
         # audios_path=[os.path.join(args.train_audio_dir,audio) for audio in audio_names if audio.endswith('.wav')]
 
-        self.sr=self.feature_extractor.sampling_rate
-        self.audios=[librosa.load(audio_path,sr=self.sr)[0] for audio_path in audios_path if audio_path.endswith('.wav')]
+        self.sr = self.feature_extractor.sampling_rate
+        self.audios = [librosa.load(audio_path, sr=self.sr)[0] for audio_path in audios_path if
+                       audio_path.endswith('.wav')]
 
         # rank=int(os.getenv('RANK', -1))
         # if rank==0 or rank== -1:
-        #     print(audio_inputs.shape)       
+        #     print(audio_inputs.shape)
 
     def __getitem__(self, index):
         self.data[index].update({'audios': self.audios[index]})
@@ -83,62 +87,71 @@ class SFT_dataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-    
+
     def preprocess(self, data):
         input_ids = []
         labels = []
-        attention_mask=[]
+        attention_mask = []
         if not isinstance(data, list):
             raise ValueError('The data must be a list.')
         for ind, d in enumerate(data):
             if ind % 2 == 1:
-                inputs=self.tokenizer(self.sep + self.roles[1] + d,add_special_tokens= False, max_length=self.args.max_seq_len, truncation=True)
-                value_ids =inputs['input_ids'] if isinstance(inputs['input_ids'],list) else inputs['input_ids'].tolist()
+                inputs = self.tokenizer(self.sep + self.roles[1] + d, add_special_tokens=False,
+                                        max_length=self.args.max_seq_len, truncation=True)
+                value_ids = inputs['input_ids'] if isinstance(inputs['input_ids'], list) else inputs[
+                    'input_ids'].tolist()
                 input_ids += value_ids
-                attention_mask+=inputs['attention_mask'] if isinstance(inputs['attention_mask'],list) else inputs['attention_mask'].tolist()
-                labels += [self.ignore_index] *self.ignore_len + value_ids[self.ignore_len:]
+                attention_mask += inputs['attention_mask'] if isinstance(inputs['attention_mask'], list) else inputs[
+                    'attention_mask'].tolist()
+                labels += [self.ignore_index] * self.ignore_len + value_ids[self.ignore_len:]
                 if len(labels) >= self.args.max_seq_len:
                     break
             else:
                 pre_str = self.sep if len(input_ids) > 0 else ''
-                inputs=self.tokenizer(pre_str + self.roles[0] + d,add_special_tokens= False, max_length=self.args.max_seq_len, truncation=True)
-                value_ids = inputs['input_ids'] if isinstance(inputs['input_ids'],list) else inputs['input_ids'].tolist() 
-                attention_mask+=inputs['attention_mask'] if isinstance(inputs['attention_mask'],list) else inputs['attention_mask'].tolist()
+                inputs = self.tokenizer(pre_str + self.roles[0] + d, add_special_tokens=False,
+                                        max_length=self.args.max_seq_len, truncation=True)
+                value_ids = inputs['input_ids'] if isinstance(inputs['input_ids'], list) else inputs[
+                    'input_ids'].tolist()
+                attention_mask += inputs['attention_mask'] if isinstance(inputs['attention_mask'], list) else inputs[
+                    'attention_mask'].tolist()
                 input_ids += value_ids
                 if len(labels) > 0:
-                    labels += [self.tokenizer.eos_token_id] + [self.ignore_index] * (len(value_ids)-1)
+                    labels += [self.tokenizer.eos_token_id] + [self.ignore_index] * (len(value_ids) - 1)
                 else:
                     labels += [self.ignore_index] * len(value_ids)
         input_ids.append(self.tokenizer.eos_token_id)
         attention_mask.append(1)
         labels.append(self.tokenizer.eos_token_id)
 
-        return {'input_ids': input_ids[:self.args.max_seq_len], 'attention_mask': attention_mask[:self.args.max_seq_len],'labels': labels[:self.args.max_seq_len]}
-    
+        return {'input_ids': input_ids[:self.args.max_seq_len],
+                'attention_mask': attention_mask[:self.args.max_seq_len], 'labels': labels[:self.args.max_seq_len]}
+
     def collate_fn(self, batch):
         input_ids = [item["input_ids"] for item in batch]
         labels = [item["labels"] for item in batch]
-        attention_mask=[item['attention_mask'] for item in batch]
-        audios=[item['audios'] for item in batch]
+        attention_mask = [item['attention_mask'] for item in batch]
+        audios = [item['audios'] for item in batch]
 
-        audio_inputs=self.feature_extractor(audios,sampling_rate=self.sr,return_attention_mask=True)
-        input_features=audio_inputs['input_features'] if isinstance(audio_inputs['input_features'],list) else audio_inputs['input_features'].tolist()
-        feature_attention_mask=audio_inputs['attention_mask'] if isinstance(audio_inputs['attention_mask'],list) else audio_inputs['attention_mask'].tolist()
-        
+        audio_inputs = self.feature_extractor(audios, sampling_rate=self.sr, return_attention_mask=True)
+        input_features = audio_inputs['input_features'] if isinstance(audio_inputs['input_features'], list) else \
+        audio_inputs['input_features'].tolist()
+        feature_attention_mask = audio_inputs['attention_mask'] if isinstance(audio_inputs['attention_mask'], list) else \
+        audio_inputs['attention_mask'].tolist()
+
         if self.debug and dist.get_rank() == 0:
             sample_list = self.tokenizer.decode(batch[0]['input_ids']).split(self.tokenizer.eos_token)
             for sample in sample_list:
                 print('\n*****************************************************')
-                print(sample+self.tokenizer.eos_token)
+                print(sample + self.tokenizer.eos_token)
             self.debug = False
 
         return {
-                "input_ids": torch.LongTensor(input_ids),
-                "labels": torch.LongTensor(labels),
-                'attention_mask': torch.LongTensor(attention_mask),
-                'input_features': torch.FloatTensor(input_features),
-                'feature_attention_mask': torch.Tensor(feature_attention_mask)
-            }
+            "input_ids": torch.LongTensor(input_ids),
+            "labels": torch.LongTensor(labels),
+            'attention_mask': torch.LongTensor(attention_mask),
+            'input_features': torch.FloatTensor(input_features),
+            'feature_attention_mask': torch.Tensor(feature_attention_mask)
+        }
 
 # class TestDataset(Dataset):
 #     def __init__(self, data_path, tokenizer):
@@ -572,4 +585,4 @@ if __name__ == '__main__':
     # print('torch.cuda.is_available():',torch.cuda.is_available())
 
     set_seed(args.seed)
-    train(args)           
+    train(args)
