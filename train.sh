@@ -1,7 +1,7 @@
 process_port=29503
 experiment_name=Qwen2-Audio-7B_train
 model_dir=/path/to/Qwen2-Audio-7B
-train_data_path=/path/to/Apollo2-7B_Prodata/Mixtrain_Prodata
+train_data_path=/path/to/data.json
 #dev_data_file=/path/to/Apollo2-7B_Prodata/dev.json
 output_dir=/path/to/ckpts
 log_folder=/path/to/logs/${experiment_name}
