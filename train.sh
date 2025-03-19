@@ -29,3 +29,4 @@ accelerate launch \
    --warmup_rates 0.03 \
    --max_ckpts 3 \
    --gradient_checkpointing  > ${log_folder}/$log_name 2>&1 &
+   # --checkpoint_path path 恢复训练
